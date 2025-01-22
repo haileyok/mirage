@@ -48,8 +48,22 @@ type MirageArgs struct {
 }
 
 var (
+	DID_KEY_PREFIX          = "did:key:"
+	BASE58_MULTIBASE_PREFIX = "z"
+
+	P256_DID_PREFIX      = []byte{0x80, 0x24}
+	P256_JWT_ALG         = "ES256"
+	SECP256K1_DID_PREFIX = []byte{0xe7, 0x01}
+	SECP256K1_JWT_ALG    = "ES256K"
+)
+
+var (
 	redisPrefix = "mirage/"
 	plcRoot     = "https://plc.directory"
+	respContext = []string{
+		"https://www.w3.org/ns/did/v1",
+		"https://w3id.org/security/multikey/v1",
+	}
 )
 
 func NewMirage(ctx context.Context, args *MirageArgs) (*Mirage, error) {
@@ -100,6 +114,7 @@ func main() {
 		Name: "mirage",
 		Commands: []*cli.Command{
 			run,
+			runResolve,
 		},
 		Flags: []cli.Flag{
 			&cli.StringFlag{
@@ -210,6 +225,101 @@ func (m *Mirage) RunServer(port string) {
 	m.wg.Wait()
 }
 
+var runResolve = &cli.Command{
+	Name:  "resolve",
+	Usage: "Resolve a did",
+	Flags: []cli.Flag{
+		&cli.StringFlag{
+			Name:     "did",
+			Required: true,
+		},
+	},
+	Action: func(c *cli.Context) error {
+		m, err := createMirage(c)
+		if err != nil {
+			return err
+		}
+
+		did := c.String("did")
+
+		res, err := m.ResolveDid(did)
+		if err != nil {
+			return err
+		}
+
+		b, err := json.MarshalIndent(res, "", "  ")
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(string(b))
+
+		return nil
+	},
+}
+
+func (m *Mirage) ResolveDid(did string) (*ResolveDidResponse, error) {
+	var entry PlcEntry
+	if err := m.db.c.Raw("SELECT * FROM plc_entries WHERE did = ? ORDER BY created_at DESC LIMIT 1", did).Scan(&entry).Error; err != nil {
+		return nil, fmt.Errorf("failed to resolve did: %w", err)
+	}
+
+	aka := []string{}
+	if entry.Operation.PlcOperation != nil {
+		aka = entry.Operation.PlcOperation.AlsoKnownAs
+	} else if entry.Operation.LegacyPlcOperation != nil {
+		aka = []string{entry.Operation.LegacyPlcOperation.Handle}
+	}
+
+	ctxt := respContext
+
+	vm := []DocVerificationMethod{}
+	if entry.Operation.PlcOperation != nil {
+		for kid, key := range entry.Operation.PlcOperation.VerificationMethods {
+			kac, err := formatKeyAndContext(key)
+			if err != nil {
+				return nil, fmt.Errorf("failed to format key and context: %w", err)
+			}
+
+			includes := false
+			for _, c := range ctxt {
+				if c == kac.Context {
+					includes = true
+					break
+				}
+			}
+
+			if !includes {
+				ctxt = append(ctxt, kac.Context)
+			}
+
+			vm = append(vm, DocVerificationMethod{
+				Id:                 fmt.Sprintf("%s#%s", entry.Did, kid),
+				Type:               kac.Type,
+				Controller:         entry.Did,
+				PublicKeyMultibase: kac.PublicKeyMultibase,
+			})
+		}
+	}
+
+	svcs := []DocService{}
+	for id, svc := range entry.Operation.PlcOperation.Services {
+		svcs = append(svcs, DocService{
+			Id:              id,
+			Type:            svc.Type,
+			ServiceEndpoint: svc.Endpoint,
+		})
+	}
+
+	return &ResolveDidResponse{
+		Context:            ctxt,
+		Id:                 entry.Did,
+		AlsoKnownAs:        aka,
+		VerificationMethod: vm,
+		Service:            svcs,
+	}, nil
+}
+
 func (m *Mirage) GetLastOp(did string) {
 
 }
@@ -219,10 +329,6 @@ func (m *Mirage) GetPlcAuditLog(did string) {
 }
 
 func (m *Mirage) GetPlcOpLog(did string) {
-
-}
-
-func (m *Mirage) ResolveDid(did string) {
 
 }
 
@@ -297,6 +403,11 @@ func (m *Mirage) runExporter() {
 							return
 						}
 
+						if i == len(pts)-1 {
+							m.r.Set(redisPrefix+"after", entry.CreatedAt, 0)
+							after = entry.CreatedAt
+						}
+
 						m.db.mu.Lock()
 						defer m.db.mu.Unlock()
 
@@ -336,11 +447,6 @@ func (m *Mirage) runExporter() {
 								m.logger.Error("failed to create did handle", "err", err)
 								return
 							}
-						}
-
-						if i == len(pts)-1 {
-							m.r.Set(redisPrefix+"after", entry.CreatedAt, 0)
-							after = entry.CreatedAt
 						}
 					}()
 				}

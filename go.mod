@@ -3,9 +3,11 @@ module github.com/haileyok/mirage
 go 1.23.5
 
 require (
+	github.com/bluesky-social/indigo v0.0.0-20250122023710-988c11827028
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/joho/godotenv v1.5.1
 	github.com/labstack/echo/v4 v4.13.3
+	github.com/mr-tron/base58 v1.2.0
 	github.com/urfave/cli/v2 v2.27.5
 	gorm.io/driver/postgres v1.5.11
 	gorm.io/gorm v1.25.12
@@ -28,6 +30,8 @@ require (
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1 // indirect
+	gitlab.com/yawning/secp256k1-voi v0.0.0-20230925100816-f2616030848b // indirect
+	gitlab.com/yawning/tuplehash v0.0.0-20230713102510-df83abbf9a02 // indirect
 	golang.org/x/crypto v0.31.0 // indirect
 	golang.org/x/net v0.33.0 // indirect
 	golang.org/x/sync v0.10.0 // indirect

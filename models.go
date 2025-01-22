@@ -62,7 +62,10 @@ type PlcOperationType struct {
 
 func (o *PlcOperationType) UnmarshalJSON(data []byte) error {
 	type Base struct {
-		Type string `json:"type"`
+		PlcOperation       *PlcOperation
+		PlcTombstone       *PlcTombstone
+		LegacyPlcOperation *LegacyPlcOperation
+		Type               string `json:"type"`
 	}
 
 	var base Base
@@ -90,7 +93,13 @@ func (o *PlcOperationType) UnmarshalJSON(data []byte) error {
 		}
 		o.LegacyPlcOperation = &op
 	default:
-		return fmt.Errorf("invalid operation type %s", base.Type)
+		if base.PlcOperation != nil || base.PlcTombstone != nil || base.LegacyPlcOperation != nil {
+			o.PlcOperation = base.PlcOperation
+			o.PlcTombstone = base.PlcTombstone
+			o.LegacyPlcOperation = base.LegacyPlcOperation
+		} else {
+			return fmt.Errorf("invalid operation type %s", base.Type)
+		}
 	}
 
 	return nil
@@ -106,4 +115,25 @@ func (o *PlcOperationType) Scan(value interface{}) error {
 		return errors.New("could not scan PlcOperationType")
 	}
 	return json.Unmarshal(bytes, o)
+}
+
+type DocVerificationMethod struct {
+	Id                 string `json:"id"`
+	Type               string `json:"type"`
+	Controller         string `json:"controller"`
+	PublicKeyMultibase string `json:"publicKeyMultibase"`
+}
+
+type DocService struct {
+	Id              string `json:"id"`
+	Type            string `json:"type"`
+	ServiceEndpoint string `json:"serviceEndpoint"`
+}
+
+type ResolveDidResponse struct {
+	Context            []string                `json:"@context"`
+	Id                 string                  `json:"id"`
+	AlsoKnownAs        []string                `json:"alsoKnownAs"`
+	VerificationMethod []DocVerificationMethod `json:"verificationMethod"`
+	Service            []DocService            `json:"service"`
 }
