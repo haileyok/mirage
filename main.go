@@ -241,14 +241,13 @@ func (m *Mirage) runExporter() {
 			return
 		}
 
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-
 		for {
 			select {
 			case <-m.ctx.Done():
 				return
-			case <-ticker.C:
+			default:
+				time.Sleep(1 * time.Second)
+
 				ustr := plcRoot + "/export?limit=1000"
 
 				if after != "" {
