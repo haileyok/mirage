@@ -65,7 +65,7 @@ func parseMultikey(key string) (*parsedMultikey, error) {
 		}
 
 		return &parsedMultikey{
-			jwtAlg:   "ES256",
+			jwtAlg:   P256_JWT_ALG,
 			keyBytes: k.Bytes(),
 		}, nil
 	} else if hasPrefix(decoded, SECP256K1_DID_PREFIX) {
@@ -76,7 +76,7 @@ func parseMultikey(key string) (*parsedMultikey, error) {
 		}
 
 		return &parsedMultikey{
-			jwtAlg:   "ES256K",
+			jwtAlg:   SECP256K1_JWT_ALG,
 			keyBytes: k.Bytes(),
 		}, nil
 	} else {
