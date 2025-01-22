@@ -4,6 +4,7 @@ go 1.23.5
 
 require (
 	github.com/go-redis/redis v6.15.9+incompatible
+	github.com/joho/godotenv v1.5.1
 	github.com/labstack/echo/v4 v4.13.3
 	github.com/urfave/cli/v2 v2.27.5
 	gorm.io/driver/postgres v1.5.11

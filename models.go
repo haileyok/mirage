@@ -3,7 +3,16 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"time"
 )
+
+type DidHandle struct {
+	Id        uint      `gorm:"primaryKey"`
+	Did       string    `gorm:"uniqueIndex;index:idx_did_handle_did_created_at"`
+	Handle    string    `gorm:"index;index:idx_did_handle_handle_created_at"`
+	UpdatedAt time.Time `gorm:"index;index:idx_did_handle_did_created_at,sort:desc;index:idx_did_handle_handle_created_at,sort:desc"`
+}
 
 type PlcEntry struct {
 	ID        uint             `json:"-" gorm:"primaryKey"`
@@ -16,12 +25,18 @@ type PlcEntry struct {
 
 type PlcOperation struct {
 	Sig                 string                `json:"sig"`
-	Prev                string                `json:"prev"`
+	Prev                *string               `json:"prev"`
 	Type                string                `json:"type"`
 	Services            map[string]PlcService `json:"services"`
 	AlsoKnownAs         []string              `json:"alsoKnownAs"`
 	RotationKeys        []string              `json:"rotationKeys"`
 	VerificationMethods map[string]string     `json:"verificationMethods"`
+}
+
+type PlcTombstone struct {
+	Sig  string `json:"sig"`
+	Prev string `json:"prev"`
+	Type string `json:"type"`
 }
 
 type PlcService struct {
@@ -41,23 +56,44 @@ type LegacyPlcOperation struct {
 
 type PlcOperationType struct {
 	PlcOperation       *PlcOperation
+	PlcTombstone       *PlcTombstone
 	LegacyPlcOperation *LegacyPlcOperation
 }
 
 func (o *PlcOperationType) UnmarshalJSON(data []byte) error {
-	var op PlcOperation
-	err := json.Unmarshal(data, &op)
-	if err == nil && op.AlsoKnownAs != nil {
+	type Base struct {
+		Type string `json:"type"`
+	}
+
+	var base Base
+	if err := json.Unmarshal(data, &base); err != nil {
+		return err
+	}
+
+	switch base.Type {
+	case "plc_operation":
+		var op PlcOperation
+		if err := json.Unmarshal(data, &op); err != nil {
+			return err
+		}
 		o.PlcOperation = &op
-		return nil
+	case "plc_tombstone":
+		var op PlcTombstone
+		if err := json.Unmarshal(data, &op); err != nil {
+			return err
+		}
+		o.PlcTombstone = &op
+	case "create":
+		var op LegacyPlcOperation
+		if err := json.Unmarshal(data, &op); err != nil {
+			return err
+		}
+		o.LegacyPlcOperation = &op
+	default:
+		return fmt.Errorf("invalid operation type %s", base.Type)
 	}
-	var lop LegacyPlcOperation
-	err = json.Unmarshal(data, &lop)
-	if err == nil {
-		o.LegacyPlcOperation = &lop
-		return nil
-	}
-	return errors.New("could not unmarshal PlcOperationTypes")
+
+	return nil
 }
 
 func (o *PlcOperationType) Value() (interface{}, error) {
