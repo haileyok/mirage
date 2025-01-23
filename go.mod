@@ -3,7 +3,7 @@ module github.com/haileyok/mirage
 go 1.23.5
 
 require (
-	github.com/bluesky-social/indigo v0.0.0-20250122023710-988c11827028
+	github.com/bluesky-social/indigo v0.0.0-20241223053147-c130614850e5
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/joho/godotenv v1.5.1
 	github.com/labstack/echo/v4 v4.13.3
