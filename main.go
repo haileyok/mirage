@@ -219,6 +219,7 @@ func (m *Mirage) RunServer(args *MirageServerArgs) {
 	m.echo = echo.New()
 	m.echo.GET("/handle/:did", m.handleGetHandleFromDid)
 	m.echo.GET("/did/:handle", m.handleGetDidFromHandle)
+	m.echo.GET("/service/:didOrHandle", m.handleGetService)
 	m.echo.GET("/:didOrHandle", m.handleResolveDid)
 	m.echo.GET("/:didOrHandle/log", m.handleGetPlcOpLog)
 	m.echo.GET("/:didOrHandle/log/last", m.handleGetLastOp)
@@ -518,6 +519,30 @@ func (m *Mirage) GetHandleFromDid(did string) (*string, bool, error) {
 	m.r.Set(redisPrefix+didHandlePrefix+did, dh.Handle, 0)
 
 	return &dh.Handle, true, nil
+}
+
+func (m *Mirage) GetService(did string) (*string, bool, error) {
+	op, err := m.GetLastOp(did)
+	if err != nil {
+		return nil, false, err
+	}
+
+	if op == nil || op.Operation.PlcTombstone != nil {
+		return nil, false, nil
+	}
+
+	if op.Operation.PlcOperation != nil {
+		pds, found := op.Operation.PlcOperation.Services["atproto_pds"]
+		if !found {
+			return nil, false, nil
+		}
+
+		return &pds.Endpoint, true, nil
+	} else if op.Operation.LegacyPlcOperation != nil {
+		return &op.Operation.LegacyPlcOperation.Service, true, nil
+	}
+
+	return nil, false, nil
 }
 
 func (m *Mirage) GetDidFromHandle(handle string) (*string, bool, error) {

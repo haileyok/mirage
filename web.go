@@ -152,6 +152,29 @@ func (m *Mirage) handleGetPlcData(e echo.Context) error {
 	return e.JSON(200, res)
 }
 
+func (m *Mirage) handleGetService(e echo.Context) error {
+	didOrHandle := e.Param("didOrHandle")
+	did, found, err := m.getDidFromDidOrHandle(didOrHandle)
+	if err != nil {
+		return e.JSON(500, map[string]string{"error": err.Error()})
+	}
+
+	if !found {
+		return e.JSON(404, map[string]string{"error": "did not found"})
+	}
+
+	res, found, err := m.GetService(*did)
+	if err != nil {
+		return e.JSON(500, map[string]string{"error": err.Error()})
+	}
+
+	if !found {
+		return e.JSON(404, map[string]string{"error": "no op found"})
+	}
+
+	return e.String(200, *res)
+}
+
 func (m *Mirage) handleExport(e echo.Context) error {
 	return e.String(501, "this route is not implemented. to export the plc, use https://plc.directory/export")
 }
