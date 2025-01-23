@@ -137,3 +137,11 @@ type ResolveDidResponse struct {
 	VerificationMethod []DocVerificationMethod `json:"verificationMethod"`
 	Service            []DocService            `json:"service"`
 }
+
+type DataResponse struct {
+	Did                 string                `json:"did"`
+	VerificationMethods map[string]string     `json:"verificationMethods"`
+	RotationKeys        []string              `json:"rotationKeys"`
+	AlsoKnownAs         []string              `json:"alsoKnownAs"`
+	Services            map[string]PlcService `json:"services"`
+}

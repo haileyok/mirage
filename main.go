@@ -3,15 +3,18 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/bluesky-social/indigo/atproto/syntax"
 	"github.com/go-redis/redis"
 	_ "github.com/joho/godotenv/autoload"
 	"github.com/labstack/echo/v4"
@@ -47,6 +50,10 @@ type MirageArgs struct {
 	LogLevel     string
 }
 
+type MirageServerArgs struct {
+	ServerPort string
+}
+
 var (
 	DID_KEY_PREFIX          = "did:key:"
 	BASE58_MULTIBASE_PREFIX = "z"
@@ -58,7 +65,10 @@ var (
 )
 
 var (
-	redisPrefix = "mirage/"
+	redisPrefix     = "mirage/"
+	didHandlePrefix = "did_handle/"
+	handleDidPrefix = "handle_did/"
+
 	plcRoot     = "https://plc.directory"
 	respContext = []string{
 		"https://www.w3.org/ns/did/v1",
@@ -94,7 +104,7 @@ func NewMirage(ctx context.Context, args *MirageArgs) (*Mirage, error) {
 
 	return &Mirage{
 		client: &http.Client{
-			Timeout: 5 * time.Second,
+			Timeout: 2 * time.Second,
 		},
 		db: &MirageDb{
 			c:  db,
@@ -115,6 +125,7 @@ func main() {
 		Commands: []*cli.Command{
 			run,
 			runResolve,
+			runFillRedis,
 		},
 		Flags: []cli.Flag{
 			&cli.StringFlag{
@@ -159,12 +170,6 @@ func main() {
 				Required: false,
 				EnvVars:  []string{"LOG_LEVEL"},
 			},
-			&cli.StringFlag{
-				Name:     "server-port",
-				Usage:    "Server port",
-				Required: false,
-				EnvVars:  []string{"SERVER_PORT"},
-			},
 		},
 	}
 
@@ -188,24 +193,40 @@ func createMirage(c *cli.Context) (*Mirage, error) {
 var run = &cli.Command{
 	Name:  "run",
 	Usage: "Run the mirage server",
+	Flags: []cli.Flag{
+		&cli.StringFlag{
+			Name:     "server-port",
+			Usage:    "Server port",
+			Required: false,
+			EnvVars:  []string{"SERVER_PORT"},
+		},
+	},
 	Action: func(c *cli.Context) error {
 		m, err := createMirage(c)
 		if err != nil {
 			return err
 		}
 
-		m.RunServer(c.String("server-port"))
+		m.RunServer(&MirageServerArgs{
+			ServerPort: c.String("server-port"),
+		})
 
 		return nil
 	},
 }
 
-func (m *Mirage) RunServer(port string) {
+func (m *Mirage) RunServer(args *MirageServerArgs) {
 	m.echo = echo.New()
-	m.echo.GET("/:did", m.handleGetLastOp)
+	m.echo.GET("/handle/:did", m.handleGetHandleFromDid)
+	m.echo.GET("/did/:handle", m.handleGetDidFromHandle)
+	m.echo.GET("/:didOrHandle", m.handleResolveDid)
+	m.echo.GET("/:didOrHandle/log", m.handleGetPlcOpLog)
+	m.echo.GET("/:didOrHandle/log/last", m.handleGetLastOp)
+	m.echo.GET("/:didOrHandle/data", m.handleGetPlcData)
+	m.echo.GET("/export", m.handleExport)
 
 	m.server = &http.Server{
-		Addr:    ":" + port,
+		Addr:    ":" + args.ServerPort,
 		Handler: m.echo,
 	}
 
@@ -217,9 +238,11 @@ func (m *Mirage) RunServer(port string) {
 	}()
 
 	m.logger.Info("starting exporter")
-	m.runExporter()
+	m.runExporter(args)
 
 	<-m.ctx.Done()
+
+	m.logger.Info("shutting down http server")
 	m.server.Shutdown(m.ctx)
 
 	m.wg.Wait()
@@ -256,6 +279,117 @@ var runResolve = &cli.Command{
 
 		return nil
 	},
+}
+
+func (m *Mirage) ResolveHandle(handle string) (*string, error) {
+	res, err := net.LookupTXT("_atproto." + handle)
+	if err == nil {
+		for _, r := range res {
+			if strings.HasPrefix(r, "did=") {
+				return &r, nil
+			}
+		}
+	}
+
+	req, err := http.NewRequest("GET", "https://"+handle+"/.well-known/atproto-did", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("non-200 status code")
+	}
+
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	mbDid := string(b)
+	if _, err := syntax.ParseDID(mbDid); err != nil {
+		return nil, err
+	}
+
+	return &mbDid, nil
+
+}
+
+var runFillRedis = &cli.Command{
+	Name:  "fill-redis",
+	Usage: "Fill the redis cache",
+	Action: func(c *cli.Context) error {
+		m, err := createMirage(c)
+		if err != nil {
+			return err
+		}
+
+		handleUsed := map[string]string{}
+
+		println("fetching rows...")
+
+		var dhs []DidHandle
+		if err := m.db.c.Raw("SELECT * FROM did_handles").Scan(&dhs).Error; err != nil {
+			return err
+		}
+
+		println("\n")
+		for i, dh := range dhs {
+			fmt.Printf("\r filling %d/%d", i, len(dhs))
+
+			did, found := handleUsed[dh.Handle]
+			if found && did != dh.Did {
+
+				println("trying to verify dupe handle")
+				did, err := m.ResolveHandle(dh.Handle)
+				if err != nil {
+					fmt.Printf("\nfailed to resolve handle: %v", err)
+					println("\nfailed to resolve handle", dh.Handle)
+					continue
+				}
+
+				if did == nil {
+					println("\nfailed to resolve handle", dh.Handle)
+					continue
+				}
+
+				if *did != dh.Did {
+					println("\nhandle did mismatch", dh.Handle, dh.Did, *did)
+					continue
+				}
+
+				println("verified dupe handle")
+			}
+
+			m.r.Set(redisPrefix+didHandlePrefix+dh.Did, dh.Handle, 0)
+			m.r.Set(redisPrefix+handleDidPrefix+dh.Handle, dh.Did, 0)
+			handleUsed[dh.Handle] = dh.Did
+		}
+		println("\ndone!")
+
+		return nil
+	},
+}
+
+func (m *Mirage) getDidFromDidOrHandle(didOrHandle string) (*string, bool, error) {
+	if _, err := syntax.ParseDID(didOrHandle); err == nil {
+		return &didOrHandle, true, nil
+	}
+
+	handle, found, err := m.GetDidFromHandle(didOrHandle)
+	if err != nil {
+		return nil, false, err
+	}
+
+	if !found {
+		return nil, false, fmt.Errorf("did or handle not found")
+	}
+
+	return handle, true, nil
 }
 
 func (m *Mirage) ResolveDid(did string) (*ResolveDidResponse, error) {
@@ -305,7 +439,7 @@ func (m *Mirage) ResolveDid(did string) (*ResolveDidResponse, error) {
 	svcs := []DocService{}
 	for id, svc := range entry.Operation.PlcOperation.Services {
 		svcs = append(svcs, DocService{
-			Id:              id,
+			Id:              "#" + id,
 			Type:            svc.Type,
 			ServiceEndpoint: svc.Endpoint,
 		})
@@ -320,23 +454,82 @@ func (m *Mirage) ResolveDid(did string) (*ResolveDidResponse, error) {
 	}, nil
 }
 
-func (m *Mirage) GetLastOp(did string) {
+func (m *Mirage) GetPlcOpLog(did string) ([]PlcEntry, error) {
+	var entries []PlcEntry
+	if err := m.db.c.Raw("SELECT * FROM plc_entries WHERE did = ? ORDER BY created_at ASC", did).Scan(&entries).Error; err != nil {
+		return nil, err
+	}
 
+	return entries, nil
 }
 
-func (m *Mirage) GetPlcAuditLog(did string) {
+func (m *Mirage) GetLastOp(did string) (*PlcEntry, error) {
+	var entry PlcEntry
+	if err := m.db.c.Raw("SELECT * FROM plc_entries WHERE did = ? ORDER BY created_at DESC LIMIT 1", did).Scan(&entry).Error; err != nil {
+		return nil, err
+	}
 
+	return &entry, nil
 }
 
-func (m *Mirage) GetPlcOpLog(did string) {
+func (m *Mirage) GetPlcData(did string) (*DataResponse, error) {
+	op, err := m.GetLastOp(did)
+	if err != nil {
+		return nil, err
+	}
 
+	if op.Operation.PlcTombstone != nil {
+		return nil, nil
+	}
+
+	if op.Operation.PlcOperation != nil {
+		op := op.Operation.PlcOperation
+		return &DataResponse{
+			Did:                 did,
+			VerificationMethods: op.VerificationMethods,
+			RotationKeys:        op.RotationKeys,
+			AlsoKnownAs:         op.AlsoKnownAs,
+			Services:            op.Services,
+		}, nil
+	}
+
+	// TODO figure out legacy ops later lol
+
+	return nil, nil
 }
 
-func (m *Mirage) GetPlcData(did string) {
+func (m *Mirage) GetHandleFromDid(did string) (*string, bool, error) {
+	cached, err := m.r.Get(redisPrefix + didHandlePrefix + did).Result()
+	if err == nil {
+		return &cached, true, nil
+	} else if err != redis.Nil {
+		return nil, false, err
+	}
 
+	var dh DidHandle
+	if err := m.db.c.Raw("SELECT * FROM did_handles WHERE did = ?", did).Scan(&dh).Error; err != nil {
+		return nil, false, err
+	}
+
+	if dh.Handle == "" {
+		return nil, false, nil
+	}
+
+	m.r.Set(redisPrefix+didHandlePrefix+did, dh.Handle, 0)
+
+	return &dh.Handle, true, nil
 }
 
-func (m *Mirage) runExporter() {
+func (m *Mirage) GetDidFromHandle(handle string) (*string, bool, error) {
+	cached, err := m.r.Get(redisPrefix + handleDidPrefix + handle).Result()
+	if err == nil {
+		return &cached, true, nil
+	} else {
+		return nil, false, errors.New("handle not found in cache. it may exist, but we are not tracking it")
+	}
+}
+
+func (m *Mirage) runExporter(_ *MirageServerArgs) {
 	m.wg.Add(1)
 	go func() {
 		defer m.wg.Done()
@@ -352,13 +545,21 @@ func (m *Mirage) runExporter() {
 			case <-m.ctx.Done():
 				return
 			default:
-				time.Sleep(1 * time.Second)
+				m.logger.Info("exporting", "cursor", after)
 
 				ustr := plcRoot + "/export?limit=1000"
+				waitMs := 3000
 
 				if after != "" {
 					ustr += "&after=" + after
+
+					t, _ := time.Parse(time.RFC3339Nano, after)
+					if time.Since(t) > 1*time.Hour {
+						waitMs = 600
+					}
 				}
+
+				time.Sleep(time.Duration(waitMs) * time.Millisecond)
 
 				req, err := http.NewRequestWithContext(m.ctx, "GET", ustr, nil)
 				if err != nil {
@@ -385,11 +586,6 @@ func (m *Mirage) runExporter() {
 				}
 
 				pts := strings.Split(string(b), "\n")
-
-				if after != "" {
-					pts = pts[1:]
-				}
-
 				for i, pt := range pts {
 					func() {
 						if pt == "" {
@@ -408,6 +604,10 @@ func (m *Mirage) runExporter() {
 							after = entry.CreatedAt
 						}
 
+						if _, err := m.r.Get(redisPrefix + didHandlePrefix + entry.Did).Result(); err != redis.Nil {
+							return
+						}
+
 						m.db.mu.Lock()
 						defer m.db.mu.Unlock()
 
@@ -424,6 +624,10 @@ func (m *Mirage) runExporter() {
 						} else {
 							handle := ""
 							if entry.Operation.PlcOperation != nil {
+								if len(entry.Operation.PlcOperation.AlsoKnownAs) == 0 {
+									m.logger.Info("encountered operation with no aka", "did", entry.Did)
+									return
+								}
 								handle = entry.Operation.PlcOperation.AlsoKnownAs[0]
 							} else if entry.Operation.LegacyPlcOperation != nil {
 								handle = entry.Operation.LegacyPlcOperation.Handle
@@ -446,6 +650,27 @@ func (m *Mirage) runExporter() {
 							}).Error; err != nil {
 								m.logger.Error("failed to create did handle", "err", err)
 								return
+							}
+
+							m.r.Set(redisPrefix+didHandlePrefix+entry.Did, handle, 0)
+
+							curr, err := m.r.Get(redisPrefix + handleDidPrefix + handle).Result()
+							if err == redis.Nil {
+								m.r.Set(redisPrefix+handleDidPrefix+handle, entry.Did, 0)
+							} else if err != nil {
+								m.logger.Error("failed to get handle did", "err", err)
+								return
+							} else if curr != entry.Did {
+								res, err := m.ResolveHandle(handle)
+								if err != nil {
+									m.logger.Error("failed to resolve handle", "err", err)
+									return
+								}
+
+								if *res != entry.Did {
+									m.logger.Error("handle did mismatch", "handle", handle, "did", entry.Did, "resolved", *res)
+									return
+								}
 							}
 						}
 					}()
