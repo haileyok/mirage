@@ -737,3 +737,14 @@ func (m *Mirage) RunExporter(_ *MirageServerArgs) {
 		}
 	}()
 }
+
+func (m *Mirage) GetUpdatedInWindow(dur time.Duration) ([]DidHandle, error) {
+	since := time.Now().Add(-dur)
+
+	var dhs []DidHandle
+	if err := m.db.c.Raw("SELECT * FROM did_handles WHERE updated_at >= ?", since).Scan(&dhs).Error; err != nil {
+		return nil, err
+	}
+
+	return dhs, nil
+}
