@@ -1,4 +1,4 @@
-package main
+package mirage
 
 import (
 	"github.com/bluesky-social/indigo/atproto/syntax"

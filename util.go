@@ -1,4 +1,4 @@
-package main
+package mirage
 
 import (
 	"bytes"
