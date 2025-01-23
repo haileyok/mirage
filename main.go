@@ -216,12 +216,35 @@ func (m *Mirage) RunServer(args *MirageServerArgs) {
 	m.echo = echo.New()
 	m.echo.GET("/handle/:did", m.handleGetHandleFromDid)
 	m.echo.GET("/did/:handle", m.handleGetDidFromHandle)
-	m.echo.GET("/service/:didOrHandle", m.handleGetService)
-	m.echo.GET("/:didOrHandle", m.handleResolveDid)
-	m.echo.GET("/:didOrHandle/log", m.handleGetPlcOpLog)
-	m.echo.GET("/:didOrHandle/log/last", m.handleGetLastOp)
-	m.echo.GET("/:didOrHandle/data", m.handleGetPlcData)
-	m.echo.GET("/export", m.handleExport)
+
+	dorhMw := func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(e echo.Context) error {
+			didOrHandle := e.Param("didOrHandle")
+			did, found, err := m.getDidFromDidOrHandle(didOrHandle)
+			if err != nil {
+				return e.JSON(500, map[string]string{"error": err.Error()})
+			}
+
+			if !found {
+				return e.JSON(404, map[string]string{"error": "did not found"})
+			}
+
+			e.SetParamValues(*did)
+
+			if err := next(e); err != nil {
+				e.Error(err)
+			}
+
+			return nil
+		}
+	}
+
+	m.echo.GET("/service/:didOrHandle", m.handleGetService, dorhMw)
+	m.echo.GET("/:didOrHandle", m.handleResolveDid, dorhMw)
+	m.echo.GET("/:didOrHandle/log", m.handleGetPlcOpLog, dorhMw)
+	m.echo.GET("/:didOrHandle/log/last", m.handleGetLastOp, dorhMw)
+	m.echo.GET("/:didOrHandle/data", m.handleGetPlcData, dorhMw)
+	m.echo.GET("/export", m.handleExport, dorhMw)
 
 	m.server = &http.Server{
 		Addr:    ":" + args.ServerPort,

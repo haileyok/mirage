@@ -46,17 +46,9 @@ func (m *Mirage) handleGetHandleFromDid(e echo.Context) error {
 }
 
 func (m *Mirage) handleResolveDid(e echo.Context) error {
-	didOrHandle := e.Param("didOrHandle")
-	did, found, err := m.getDidFromDidOrHandle(didOrHandle)
-	if err != nil {
-		return e.JSON(500, map[string]string{"error": err.Error()})
-	}
+	did := e.Param("didOrHandle")
 
-	if !found {
-		return e.JSON(404, map[string]string{"error": "did not found"})
-	}
-
-	res, err := m.ResolveDid(*did)
+	res, err := m.ResolveDid(did)
 	if err != nil {
 		return e.JSON(500, map[string]string{"error": err.Error()})
 	}
@@ -65,17 +57,9 @@ func (m *Mirage) handleResolveDid(e echo.Context) error {
 }
 
 func (m *Mirage) handleGetPlcOpLog(e echo.Context) error {
-	didOrHandle := e.Param("didOrHandle")
-	did, found, err := m.getDidFromDidOrHandle(didOrHandle)
-	if err != nil {
-		return e.JSON(500, map[string]string{"error": err.Error()})
-	}
+	did := e.Param("didOrHandle")
 
-	if !found {
-		return e.JSON(404, map[string]string{"error": "did not found"})
-	}
-
-	res, err := m.GetPlcOpLog(*did)
+	res, err := m.GetPlcOpLog(did)
 	if err != nil {
 		return e.JSON(500, map[string]string{"error": err.Error()})
 	}
@@ -99,17 +83,9 @@ func (m *Mirage) handleGetPlcOpLog(e echo.Context) error {
 }
 
 func (m *Mirage) handleGetLastOp(e echo.Context) error {
-	didOrHandle := e.Param("didOrHandle")
-	did, found, err := m.getDidFromDidOrHandle(didOrHandle)
-	if err != nil {
-		return e.JSON(500, map[string]string{"error": err.Error()})
-	}
+	did := e.Param("didOrHandle")
 
-	if !found {
-		return e.JSON(404, map[string]string{"error": "did not found"})
-	}
-
-	res, err := m.GetLastOp(*did)
+	res, err := m.GetLastOp(did)
 	if err != nil {
 		return e.JSON(500, map[string]string{"error": err.Error()})
 	}
@@ -130,17 +106,9 @@ func (m *Mirage) handleGetLastOp(e echo.Context) error {
 }
 
 func (m *Mirage) handleGetPlcData(e echo.Context) error {
-	didOrHandle := e.Param("didOrHandle")
-	did, found, err := m.getDidFromDidOrHandle(didOrHandle)
-	if err != nil {
-		return e.JSON(500, map[string]string{"error": err.Error()})
-	}
+	did := e.Param("didOrHandle")
 
-	if !found {
-		return e.JSON(404, map[string]string{"error": "did not found"})
-	}
-
-	res, err := m.GetPlcData(*did)
+	res, err := m.GetPlcData(did)
 	if err != nil {
 		return e.JSON(500, map[string]string{"error": err.Error()})
 	}
@@ -153,17 +121,9 @@ func (m *Mirage) handleGetPlcData(e echo.Context) error {
 }
 
 func (m *Mirage) handleGetService(e echo.Context) error {
-	didOrHandle := e.Param("didOrHandle")
-	did, found, err := m.getDidFromDidOrHandle(didOrHandle)
-	if err != nil {
-		return e.JSON(500, map[string]string{"error": err.Error()})
-	}
+	did := e.Param("didOrHandle")
 
-	if !found {
-		return e.JSON(404, map[string]string{"error": "did not found"})
-	}
-
-	res, found, err := m.GetService(*did)
+	res, found, err := m.GetService(did)
 	if err != nil {
 		return e.JSON(500, map[string]string{"error": err.Error()})
 	}
