@@ -10,21 +10,21 @@ import (
 )
 
 func extractMultikey(key string) (*string, error) {
-	if !strings.HasPrefix(key, DID_KEY_PREFIX) {
+	if !strings.HasPrefix(key, didKeyPrefix) {
 		return nil, fmt.Errorf("key is not a did:key")
 	}
 
-	fmtd := strings.TrimPrefix(key, DID_KEY_PREFIX)
+	fmtd := strings.TrimPrefix(key, didKeyPrefix)
 	return &fmtd, nil
 }
 
 func extractPrefixedBytes(multikey string) ([]byte, error) {
-	if !strings.HasPrefix(multikey, BASE58_MULTIBASE_PREFIX) {
+	if !strings.HasPrefix(multikey, base58MultibasePrefix) {
 		println(multikey)
 		return nil, fmt.Errorf("multikey is not prefixed correctly")
 	}
 
-	encoded := strings.TrimPrefix(multikey, BASE58_MULTIBASE_PREFIX)
+	encoded := strings.TrimPrefix(multikey, base58MultibasePrefix)
 
 	decoded, err := base58.Decode(encoded)
 	if err != nil {
@@ -58,17 +58,17 @@ func parseMultikey(key string) (*parsedMultikey, error) {
 		return nil, fmt.Errorf("failed to extract prefixed bytes: %w", err)
 	}
 
-	if hasPrefix(decoded, P256_DID_PREFIX) {
+	if hasPrefix(decoded, p256DidPrefix) {
 		k, err := crypto.ParsePublicBytesP256(decoded[2:])
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse P256 key: %w", err)
 		}
 
 		return &parsedMultikey{
-			jwtAlg:   P256_JWT_ALG,
+			jwtAlg:   p256JwtAlg,
 			keyBytes: k.Bytes(),
 		}, nil
-	} else if hasPrefix(decoded, SECP256K1_DID_PREFIX) {
+	} else if hasPrefix(decoded, SECP256K1DidPrefix) {
 		k, err := crypto.ParsePublicBytesK256(decoded[2:])
 		if err != nil {
 			println(string(decoded))
@@ -76,7 +76,7 @@ func parseMultikey(key string) (*parsedMultikey, error) {
 		}
 
 		return &parsedMultikey{
-			jwtAlg:   SECP256K1_JWT_ALG,
+			jwtAlg:   SECP256K1JwtAlg,
 			keyBytes: k.Bytes(),
 		}, nil
 	} else {
@@ -97,9 +97,9 @@ func formatKeyAndContext(key string) (*keyAndContext, error) {
 	}
 
 	var context string
-	if parsed.jwtAlg == P256_JWT_ALG {
+	if parsed.jwtAlg == p256JwtAlg {
 		context = "https://w3id.org/security/suites/ecdsa-2019/v1"
-	} else if parsed.jwtAlg == SECP256K1_JWT_ALG {
+	} else if parsed.jwtAlg == SECP256K1JwtAlg {
 		context = "https://w3id.org/security/suites/secp256k1-2019/v1"
 	} else {
 		return nil, fmt.Errorf("unsupported jwt alg")
@@ -108,6 +108,6 @@ func formatKeyAndContext(key string) (*keyAndContext, error) {
 	return &keyAndContext{
 		Context:            context,
 		Type:               "Multikey",
-		PublicKeyMultibase: strings.TrimPrefix(key, DID_KEY_PREFIX),
+		PublicKeyMultibase: strings.TrimPrefix(key, didKeyPrefix),
 	}, nil
 }

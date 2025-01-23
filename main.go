@@ -55,16 +55,13 @@ type MirageServerArgs struct {
 }
 
 var (
-	DID_KEY_PREFIX          = "did:key:"
-	BASE58_MULTIBASE_PREFIX = "z"
+	didKeyPrefix          = "did:key:"
+	base58MultibasePrefix = "z"
+	p256DidPrefix         = []byte{0x80, 0x24}
+	p256JwtAlg            = "ES256"
+	SECP256K1DidPrefix    = []byte{0xe7, 0x01}
+	SECP256K1JwtAlg       = "ES256K"
 
-	P256_DID_PREFIX      = []byte{0x80, 0x24}
-	P256_JWT_ALG         = "ES256"
-	SECP256K1_DID_PREFIX = []byte{0xe7, 0x01}
-	SECP256K1_JWT_ALG    = "ES256K"
-)
-
-var (
 	redisPrefix     = "mirage/"
 	didHandlePrefix = "did_handle/"
 	handleDidPrefix = "handle_did/"
