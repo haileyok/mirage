@@ -143,8 +143,10 @@ func (m *Mirage) RunServer(args *MirageServerArgs) {
 	}
 
 	m.echo.GET("/service/:didOrHandle", m.handleGetService, dorhMw)
+	m.echo.GET("/created/:didOrHandle", m.handleGetCreatedAt, dorhMw)
 	m.echo.GET("/:didOrHandle", m.handleResolveDid, dorhMw)
 	m.echo.GET("/:didOrHandle/log", m.handleGetPlcOpLog, dorhMw)
+	m.echo.GET("/:didOrHandle/log/audit", m.handleGetAuditLog, dorhMw)
 	m.echo.GET("/:didOrHandle/log/last", m.handleGetLastOp, dorhMw)
 	m.echo.GET("/:didOrHandle/data", m.handleGetPlcData, dorhMw)
 	m.echo.GET("/export", m.handleExport, dorhMw)
@@ -388,6 +390,19 @@ func (m *Mirage) GetDidFromHandle(handle string) (*string, bool, error) {
 	}
 }
 
+func (m *Mirage) GetCreatedAt(did string) (*string, bool, error) {
+	var entries []PlcEntry
+	if err := m.db.c.Raw("SELECT * FROM plc_entries WHERE did = ? ORDER BY created_at ASC LIMIT 1", did).Scan(&entries).Error; err != nil {
+		return nil, false, err
+	}
+
+	if len(entries) == 0 {
+		return nil, false, nil
+	}
+
+	return &entries[0].CreatedAt, true, nil
+}
+
 func (m *Mirage) runExporter(_ *MirageServerArgs) {
 	m.wg.Add(1)
 	go func() {
@@ -539,7 +554,7 @@ func (m *Mirage) runExporter(_ *MirageServerArgs) {
 	}()
 }
 
-func (m *Mirage) FillRedis() error {
+func (m *Mirage) FillRedis(skip int) error {
 	handleUsed := map[string]string{}
 
 	m.logger.Info("fetching rows...")
@@ -548,6 +563,8 @@ func (m *Mirage) FillRedis() error {
 	if err := m.db.c.Raw("SELECT * FROM did_handles").Scan(&dhs).Error; err != nil {
 		return err
 	}
+
+	dhs = dhs[skip:]
 
 	println("\n")
 	for i, dh := range dhs {
