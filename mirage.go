@@ -422,7 +422,7 @@ func (m *Mirage) runExporter(_ *MirageServerArgs) {
 				m.logger.Info("exporting", "cursor", after)
 
 				ustr := plcRoot + "/export?limit=1000"
-				waitMs := 3000
+				waitMs := 1000
 
 				if after != "" {
 					ustr += "&after=" + after
