@@ -212,9 +212,14 @@ func (m *Mirage) handleGetDidHandles(e echo.Context) error {
 		return e.JSON(http.StatusInternalServerError, nil)
 	}
 
+	var newCursor uint = 0
+	if len(didHandles) > 0 {
+		newCursor = didHandles[len(didHandles)-1].Id
+	}
+
 	return e.JSON(200, map[string]interface{}{
 		"users":  didHandles,
-		"cursor": c + 1000,
+		"cursor": newCursor,
 	})
 }
 
