@@ -149,6 +149,7 @@ func (m *Mirage) RunServer(args *MirageServerArgs) {
 	m.echo.GET("/:didOrHandle/log/audit", m.handleGetAuditLog, dorhMw)
 	m.echo.GET("/:didOrHandle/log/last", m.handleGetLastOp, dorhMw)
 	m.echo.GET("/:didOrHandle/data", m.handleGetPlcData, dorhMw)
+	m.echo.GET("/users", m.handleGetDidHandles)
 	m.echo.GET("/export", m.handleExport, dorhMw)
 
 	m.server = &http.Server{
@@ -401,6 +402,19 @@ func (m *Mirage) GetCreatedAt(did string) (*string, bool, error) {
 	}
 
 	return &entries[0].CreatedAt, true, nil
+}
+
+func (m *Mirage) GetDidHandles(cursor *uint) ([]DidHandle, error) {
+	var c uint = 0
+	if cursor != nil {
+		c = *cursor
+	}
+	var didHandles []DidHandle
+	if err := m.db.c.Raw("SELECT * FROM did_handles WHERE id > ? ORDER BY id LIMIT 1000", c).Scan(&didHandles).Error; err != nil {
+		return nil, err
+	}
+
+	return didHandles, nil
 }
 
 func (m *Mirage) runExporter(_ *MirageServerArgs) {

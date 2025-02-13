@@ -1,6 +1,9 @@
 package mirage
 
 import (
+	"net/http"
+	"strconv"
+
 	"github.com/bluesky-social/indigo/atproto/syntax"
 	"github.com/labstack/echo/v4"
 )
@@ -191,6 +194,28 @@ func (m *Mirage) handleGetCreatedAt(e echo.Context) error {
 	}
 
 	return e.String(200, *res)
+}
+
+func (m *Mirage) handleGetDidHandles(e echo.Context) error {
+	cstr := e.QueryParam("cursor")
+	var c uint = 0
+	if cstr != "" {
+		u64, err := strconv.ParseUint(cstr, 10, 32)
+		if err != nil {
+			return e.JSON(http.StatusBadRequest, nil)
+		}
+		c = uint(u64)
+	}
+
+	didHandles, err := m.GetDidHandles(&c)
+	if err != nil {
+		return e.JSON(http.StatusInternalServerError, nil)
+	}
+
+	return e.JSON(200, map[string]interface{}{
+		"users":  didHandles,
+		"cursor": c + 1000,
+	})
 }
 
 func createError(msg string) map[string]string {
